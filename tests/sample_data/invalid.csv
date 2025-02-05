@@ -1,0 +1,6 @@
+student_id,name,course,cohort,graduation_date,email_address,phone_number
+1001,John Smith,Software Engineering,NC-2024-01,2024-06-30,invalid-email
+1002,,Data Science,NC-2024-02,,s.johnson@email.com,+44-7700-900456
+1003,Mohammed Ali,Cloud Computing,NC-2024-01,2024-06-30,m.ali@email.com,+44-7700-900789,extra_column
+1004,Emma Wilson
+1005,Chen Wei,AI & ML,NC-2024-01,not-a-date,chen.wei@email.com,+44-7700-900654
