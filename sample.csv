@@ -1,0 +1,3 @@
+student_id,name,course,cohort,graduation_date,email_address
+1234,John Doe,Software,2024,2024-03-31,john@example.com
+5678,Jane Smith,Data,2024,2024-06-30,jane@example.com
