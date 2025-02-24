@@ -146,22 +146,17 @@ The obfuscator accepts the following configuration in JSON format:
 
 ## Development
 
-### Code Style
+### Code Quality and Security
 
-This project follows PEP 8 style guidelines. To check code style:
+This project follows PEP 8 style guidelines and implements several security checks.
 
+#### Style Checking
 ```bash
-# Install development dependencies
-pip install -r requirements.txt
-
 # Run flake8 on all Python files
 flake8 .
 
 # Run flake8 on specific file
 flake8 src/gdpr_obfuscator.py
-
-# Run flake8 on specific directory
-flake8 src/
 ```
 
 Common flake8 codes:
@@ -171,6 +166,41 @@ Common flake8 codes:
 - E501: Line too long
 - F401: Unused import
 - F821: Undefined name
+
+#### Security Scanning
+
+The project uses multiple security scanning abilities:
+
+1. Bandit - For Python code security analysis:
+```bash
+# Scan entire project
+bandit -r .
+
+# Scan specific directory
+bandit -r src/
+
+# Generate detailed report
+bandit -r . -f json -ll
+```
+
+2. Safety - For checking dependencies against known security vulnerabilities:
+```bash
+# Check installed packages
+safety check
+
+# Check requirements file
+safety check -r requirements.txt
+
+# Generate detailed report
+safety check --full-report
+```
+
+Run all security checks:
+```bash
+# Style and security checks
+flake8 .
+bandit -r .
+safety check
 
 ### Testing
 

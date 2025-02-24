@@ -1,12 +1,5 @@
-import sys
-import pathlib
 from moto import mock_aws
 import boto3
-
-# Add the project root to Python path so we can import the lambda function
-root_dir = str(pathlib.Path(__file__).parent.parent)
-sys.path.append(root_dir)
-
 from lambda_function.lambda_function import lambda_handler
 
 
