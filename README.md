@@ -159,13 +159,6 @@ flake8 .
 flake8 src/gdpr_obfuscator.py
 ```
 
-Common flake8 codes:
-- E201-E299: Whitespace errors
-- E301-E399: Blank line errors
-- E401-E499: Import formatting
-- E501: Line too long
-- F401: Unused import
-- F821: Undefined name
 
 #### Security Scanning
 
