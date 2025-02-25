@@ -1,7 +1,15 @@
 import json
 import boto3
 import csv
+import logging
 from io import StringIO
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('gdpr_obfuscator')
 
 
 def obfuscate_pii(input_json: str) -> bytes:
@@ -20,10 +28,12 @@ def obfuscate_pii(input_json: str) -> bytes:
         ValueError: If the input JSON is invalid, missing required keys, or if S3/CSV processing
         fails.
     """
+    logger.info("Starting PII obfuscation process")
     # Parse input JSON
     try:
         input_data = json.loads(input_json)
     except json.JSONDecodeError:
+        logger.error("Invalid JSON input provided")
         raise ValueError("Invalid JSON input")
 
     if 'file_to_obfuscate' not in input_data or 'pii_fields' not in input_data:
@@ -39,15 +49,24 @@ def obfuscate_pii(input_json: str) -> bytes:
 
     # Extract bucket and key from S3 path
     bucket, key = s3_path[5:].split("/", 1)
+    
+    # Validate key against path traversal
+    if '..' in key or key.startswith('/'):
+        raise ValueError("Invalid S3 key: potential path traversal detected")
+        
     s3_client = boto3.client('s3')
 
     # Download CSV from S3
     try:
+        logger.info(f"Downloading CSV from S3: bucket={bucket}, key={key}")
         response = s3_client.get_object(Bucket=bucket, Key=key)
         csv_content = response['Body'].read().decode('utf-8')
+        logger.info(f"Successfully downloaded CSV, size: {len(csv_content)} bytes")
     except s3_client.exceptions.NoSuchKey:
+        logger.error(f"S3 file not found: bucket={bucket}, key={key}")
         raise ValueError("S3 file not found")
     except s3_client.exceptions.ClientError as e:
+        logger.error(f"S3 client error: {e}")
         raise ValueError(f"S3 client error: {e}")
 
     # Process CSV
@@ -56,19 +75,32 @@ def obfuscate_pii(input_json: str) -> bytes:
 
     # Validate PII fields exist in CSV headers
     if not reader.fieldnames:
+        logger.error("CSV file has no headers")
         raise ValueError("CSV file has no headers")
+    
+    logger.info(f"CSV headers: {reader.fieldnames}")
+    
     for field in pii_fields:
         if field not in reader.fieldnames:
+            logger.error(f"PII field '{field}' not found in CSV headers")
             raise ValueError(f"PII field '{field}' not found in CSV headers")
+    
+    logger.info(f"Obfuscating fields: {pii_fields}")
 
     # Process rows
     output = StringIO()
     writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
     writer.writeheader()
-
+    
+    row_count = 0
     for row in reader:
         for field in pii_fields:
             row[field] = '***'
         writer.writerow(row)
-
-    return output.getvalue().encode('utf-8')
+        row_count += 1
+    
+    logger.info(f"Processed {row_count} rows")
+    
+    result = output.getvalue().encode('utf-8')
+    logger.info(f"Obfuscation complete, output size: {len(result)} bytes")
+    return result
