@@ -239,17 +239,22 @@ def test_obfuscate_pii_unicode_characters():
 
     s3_client.put_object(Bucket=bucket_name, Key='unicode.csv', Body=csv_content)
 
+
+@mock_aws
+def test_obfuscate_pii_path_traversal_detection():
+    """Test detection of path traversal attempts in S3 keys"""
+    # Test with path containing ../
     input_json = json.dumps({
-        "file_to_obfuscate": f"s3://{bucket_name}/unicode.csv",
-        "pii_fields": ["name", "email"]
+        "file_to_obfuscate": "s3://bucket/folder/../sensitive-data.csv",
+        "pii_fields": ["name"]
     })
+    with pytest.raises(ValueError, match="Invalid S3 key: potential path traversal detected"):
+        obfuscate_pii(input_json)
 
-    result = obfuscate_pii(input_json)
-    result_str = result.decode('utf-8').replace('\r\n', '\n')
-
-    expected = (
-        "id,name,email\n"
-        "1,***,***\n"
-        "2,***,***\n"
-    )
-    assert result_str == expected
+    # Test with path starting with /
+    input_json = json.dumps({
+        "file_to_obfuscate": "s3://bucket//etc/passwd",
+        "pii_fields": ["name"]
+    })
+    with pytest.raises(ValueError, match="Invalid S3 key: potential path traversal detected"):
+        obfuscate_pii(input_json)

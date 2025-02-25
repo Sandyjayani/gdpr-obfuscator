@@ -48,7 +48,7 @@ def lambda_handler(event, context):
         # Get PII fields from environment variables or use defaults
         pii_fields = os.environ.get('PII_FIELDS', 'name,email_address').split(',')
         logger.info(f"Using PII fields: {pii_fields}")
-        
+
         # Prepare input for obfuscator
         input_json = json.dumps({
             'file_to_obfuscate': f's3://{bucket}/{key}',
@@ -78,7 +78,7 @@ def lambda_handler(event, context):
             # If not in new_data folder, place in processed_data with same filename
             filename = key.split('/')[-1]
             output_key = f'processed_data/{filename}'
-            
+
         logger.info(f"Saving obfuscated file to: bucket={bucket}, key={output_key}")
         s3_client = boto3.client('s3')
         s3_client.put_object(

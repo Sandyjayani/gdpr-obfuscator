@@ -207,6 +207,27 @@ The tests cover:
 - Error handling
 - AWS Lambda integration
 - Edge cases
+- Performance benchmarks
+
+#### Performance Testing
+
+The project includes performance tests to ensure it meets the requirement of processing 1MB files in under 1 minute:
+
+```bash
+# Run just the performance tests
+pytest tests/test_performance.py -v
+
+# Run the memory usage test (requires psutil)
+pip install psutil
+pytest tests/test_performance.py::test_memory_usage -v
+```
+
+Performance tests verify:
+- Processing time for files up to 1MB
+- Memory usage during processing
+- Throughput (MB/second) for different file sizes
+
+These tests help ensure the ability meets the performance criteria and can be deployed within AWS Lambda's constraints.
 
 ## Error Handling
 

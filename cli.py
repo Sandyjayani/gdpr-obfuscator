@@ -46,7 +46,8 @@ def process_local_file(
             sys.stdout.buffer.write(result)
 
     except FileNotFoundError:
-        print(f"Error: Input file '{local_file}' not found. Please check the file path.", file=sys.stderr)
+        print(f"Error: Input file '{local_file}' not found. Please check the file path.",
+              file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
