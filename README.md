@@ -154,6 +154,21 @@ print(result)  # Contains status and output file location
 
 ### As an AWS Lambda Function
 
+The Lambda function supports two invocation methods:
+1. Direct invocation with a specific file to process
+2. S3 event-triggered processing
+
+#### Direct Invocation
+```python
+# Example event for direct invocation
+{
+    "file_to_obfuscate": "s3://my-bucket/path/to/file.csv"
+}
+```
+
+#### S3 Event Processing
+The function automatically processes files when they are uploaded to a configured S3 bucket.
+
 1. Deploy the Lambda function code to AWS:
    ```bash
    # Create a deployment package manually
@@ -170,20 +185,35 @@ print(result)  # Contains status and output file location
    - Memory: 256MB (recommended minimum)
    - Timeout: 3 minutes (for larger files)
    - Environment variables:
-     - `DEFAULT_OUTPUT_BUCKET`: Destination bucket for processed files
-     - `DEFAULT_PII_FIELDS`: Comma-separated list of default PII fields
-     - `OBFUSCATION_CHAR`: Character to use for obfuscation (optional)
+     - `PII_FIELDS`: Comma-separated list of fields to obfuscate (e.g., "name,email_address")
+     - `LOG_LEVEL`: Optional logging level (defaults to INFO)
 
 3. Set up S3 trigger for new files:
    - Configure event type: ObjectCreated
    - Prefix: input/ (or your preferred input directory)
    - Suffix: .csv
 
-4. The function will automatically:
-   - Process new CSV files uploaded to the specified S3 bucket
-   - Obfuscate configured PII fields
-   - Save the processed file to the output bucket or 'processed/' folder
-   - Log processing details to CloudWatch
+4. The function will:
+   - Process files either through direct invocation or S3 events
+   - Obfuscate configured PII fields from environment variables
+   - Return appropriate HTTP status codes (200, 400, 404, 500)
+   - Provide detailed error messages for troubleshooting
+   - Log comprehensive processing details to CloudWatch
+
+#### Response Format
+The function returns a JSON object with:
+```json
+{
+    "statusCode": 200,  // HTTP status code
+    "body": "Processing result or error message"
+}
+```
+
+Status Codes:
+- 200: Successful processing
+- 400: Invalid input or validation error
+- 404: File not found in S3
+- 500: Internal processing error
 
 ## Testing with AWS
 
