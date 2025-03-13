@@ -20,6 +20,7 @@ def obfuscate_pii(input_json: str) -> bytes:
         input_json: A JSON string containing:
             - "file_to_obfuscate": S3 path to the CSV file (e.g., "s3://bucket/key.csv")
             - "pii_fields": List of column names to obfuscate.
+            - "output_location": Optional S3 path to write results (e.g., "s3://bucket/output.csv")
 
     Returns:
         bytes: The obfuscated CSV content as a byte-stream, compatible with boto3 S3 PutObject.
@@ -58,6 +59,9 @@ def obfuscate_pii(input_json: str) -> bytes:
     session = boto3.session.Session()
     region = session.region_name or 'us-east-1'
     s3_client = boto3.client('s3', region_name=region)
+
+    # Get output location if specified
+    output_location = input_data.get('output_location', None)
 
     # Download CSV from S3
     try:
@@ -106,4 +110,19 @@ def obfuscate_pii(input_json: str) -> bytes:
 
     result = output.getvalue().encode('utf-8')
     logger.info(f"Obfuscation complete, output size: {len(result)} bytes")
+
+    if output_location and output_location.startswith("s3://"):
+        try:
+            output_bucket, output_key = output_location[5:].split("/", 1)
+            logger.info(f"Writing output to S3: bucket={output_bucket}, key={output_key}")
+            s3_client.put_object(
+                Bucket=output_bucket,
+                Key=output_key,
+                Body=result,
+                ContentType='text/csv'
+            )
+            logger.info("Successfully wrote output to S3")
+        except s3_client.exceptions.ClientError as e:
+            logger.error(f"Failed to write to S3: {e}")
+
     return result
