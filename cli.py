@@ -35,19 +35,27 @@ def process_local_file(
         })
 
         # Process the file
-        result = obfuscate_pii(input_json)
+        result = json.loads(obfuscate_pii(input_json))
+
+        # Check response status
+        if result['statusCode'] != 200:
+            print(f"Error: {result['body']}", file=sys.stderr)
+            sys.exit(1)
 
         # Handle output
         if output_file:
             with open(output_file, 'wb') as f:
-                f.write(result)
+                f.write(result['body'].encode('utf-8'))
             print(f"Obfuscated CSV saved to: {output_file}")
         else:
-            sys.stdout.buffer.write(result)
+            sys.stdout.buffer.write(result['body'].encode('utf-8'))
 
     except FileNotFoundError:
         print(f"Error: Input file '{local_file}' not found. Please check the file path.",
               file=sys.stderr)
+        sys.exit(1)
+    except json.JSONDecodeError:
+        print("Error: Invalid response format from obfuscator", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
@@ -62,7 +70,12 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
             "pii_fields": pii_fields
         })
 
-        result = obfuscate_pii(input_json)
+        result = json.loads(obfuscate_pii(input_json))
+
+        # Check response status
+        if result['statusCode'] != 200:
+            print(f"Error: {result['body']}", file=sys.stderr)
+            sys.exit(1)
 
         if output_file:
             # Check if output is an S3 path
@@ -77,18 +90,21 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
                 s3_client.put_object(
                     Bucket=bucket,
                     Key=key,
-                    Body=result,
+                    Body=result['body'].encode('utf-8'),
                     ContentType='text/csv'
                 )
                 print(f"Obfuscated CSV saved to S3: {output_file}")
             else:
                 # Local file output
                 with open(output_file, 'wb') as f:
-                    f.write(result)
+                    f.write(result['body'].encode('utf-8'))
                 print(f"Obfuscated CSV saved to: {output_file}")
         else:
-            sys.stdout.buffer.write(result)
+            sys.stdout.buffer.write(result['body'].encode('utf-8'))
 
+    except json.JSONDecodeError:
+        print("Error: Invalid response format from obfuscator", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)

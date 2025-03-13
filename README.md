@@ -93,7 +93,7 @@ student_id,name,course,cohort,graduation_date,email_address
 # Process an S3 file
 python cli.py --s3-path s3://my-bucket/file.csv --pii-fields name email_address
 
-# Save output to file
+# Save output to local file
 python cli.py --s3-path s3://my-bucket/file.csv --pii-fields name email_address --output masked.csv
 
 # Process and save directly to another S3 location
@@ -106,10 +106,16 @@ Arguments:
 - `--pii-fields`: List of column names to obfuscate (space-separated)
 - `--output`: Optional path to save the obfuscated CSV (defaults to stdout, can be local or S3 path)
 - `--bucket`: Optional mock S3 bucket name for local testing (default: my_ingestion_bucket)
-- `--obfuscation-char`: Optional character to use for obfuscation (default: *)
-- `--preserve-format`: Optional flag to preserve data format (e.g., email@example.com → ****@*******.com)
 
-Note: Local mode uses mocked AWS services, so no real AWS credentials are required.
+Note: 
+- Local mode uses mocked AWS services, so no real AWS credentials are required
+- When using S3 output paths, the file will be uploaded with 'text/csv' Content-Type
+- The tool will exit with status code 1 if any errors occur during processing
+- Common error scenarios handled:
+  - File not found (local or S3)
+  - Invalid input format
+  - S3 access or upload errors
+  - Processing errors
 
 ### S3 Output Examples
 
