@@ -8,8 +8,15 @@ A robust Python service designed to automatically detect and obfuscate personall
 - Seamless AWS Lambda integration for scalable serverless processing
 - Highly configurable PII field mapping to meet specific compliance requirements
 - Complete preservation of CSV structure and non-PII data
-- Comprehensive error handling for production reliability
-- Optimized AWS S3 integration for secure input and output operations
+- Comprehensive error handling and validation:
+  - Path traversal detection for S3 keys
+  - Unicode character support
+  - CSV structure validation
+  - JSON input validation
+- Optimized AWS S3 integration:
+  - Region-aware client initialization
+  - Proper Content-Type setting
+  - Flexible output location specification
 - Performance-optimized for handling large datasets efficiently
 
 ## Requirements
@@ -208,13 +215,18 @@ The obfuscator accepts the following configuration in JSON format:
 
 ### Configuration Options
 
-- `file_to_obfuscate`: S3 path to the CSV file (must start with "s3://")
+- `file_to_obfuscate`: S3 path to the CSV file (must start with "s3://"). Path traversal attempts (e.g., "../") are detected and blocked
 - `pii_fields`: List of column names to be obfuscated
-- `output_path`: (Optional) S3 path for the processed file
+- `output_location`: (Optional) S3 path for the processed file (e.g., "s3://bucket/processed/file.csv")
 - `obfuscation_char`: (Optional) Character used for obfuscation (default: "*")
 - `preserve_format`: (Optional) Whether to preserve data format patterns (default: false)
 - `csv_options`: (Optional) CSV parsing options
+  - `delimiter`: CSV field separator (default: ",")
+  - `quotechar`: Character for quoting fields (default: '"')
+  - `encoding`: File encoding (default: "utf-8", full Unicode support)
 - `logging`: (Optional) Logging configuration
+  - `level`: Logging level (default: "INFO")
+  - `include_timestamps`: Whether to include timestamps in logs (default: true)
 
 ## Development
 
@@ -339,26 +351,31 @@ The service implements robust error handling for production reliability:
   - Invalid JSON input detection
   - Missing or malformed CSV files
   - Missing or invalid PII fields
-  - Invalid S3 paths
+  - Invalid S3 paths and path traversal attempts
   - CSV files without headers
+  - Unicode character validation
+  - Special character handling in CSV
 
 - **AWS Service Errors**:
   - S3 access permission issues
   - Bucket not found errors
   - Network connectivity problems
   - Service throttling and quotas
+  - Region-specific handling
 
 - **Processing Errors**:
   - CSV parsing errors
   - Memory limitations
   - Timeout handling
   - Malformed data handling
+  - Character encoding issues
 
 - **Logging and Monitoring**:
   - Detailed error messages
   - CloudWatch integration
   - Error classification
   - Retry mechanisms for transient errors
+  - Processing metrics tracking
 
 ## Contributing
 
