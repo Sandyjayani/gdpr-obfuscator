@@ -111,6 +111,27 @@ Arguments:
 
 Note: Local mode uses mocked AWS services, so no real AWS credentials are required.
 
+### S3 Output Examples
+
+When using the `--output` parameter with an S3 path, the tool will upload the obfuscated file directly to the specified S3 location:
+
+```bash
+# Process a file from one S3 bucket and save to another
+python cli.py --s3-path s3://source-bucket/data.csv --pii-fields name email_address --output s3://destination-bucket/masked-data.csv
+
+# Process a file and save to the same bucket with a different prefix
+python cli.py --s3-path s3://my-bucket/raw/data.csv --pii-fields name email_address --output s3://my-bucket/processed/data.csv
+
+# Process a file and save with a different filename
+python cli.py --s3-path s3://my-bucket/customer-data.csv --pii-fields name email_address --output s3://my-bucket/customer-data-anonymized.csv
+```
+
+The tool will automatically:
+1. Download the source file from S3
+2. Process and obfuscate the specified PII fields
+3. Upload the result directly to the specified S3 location
+4. Set the proper Content-Type as 'text/csv'
+
 ### As a Python Package
 
 ```python
@@ -163,6 +184,107 @@ print(result)  # Contains status and output file location
    - Obfuscate configured PII fields
    - Save the processed file to the output bucket or 'processed/' folder
    - Log processing details to CloudWatch
+
+## Testing with AWS
+
+### Prerequisites
+
+1. Configure AWS credentials:
+   ```bash
+   aws configure
+   ```
+
+2. Create S3 buckets for testing:
+   ```bash
+   aws s3 mb s3://gdpr-input-bucket
+   aws s3 mb s3://gdpr-output-bucket
+   ```
+
+### Testing the CLI with S3
+
+1. Create a sample CSV file:
+   ```csv
+   student_id,name,course,cohort,graduation_date,email_address
+   1234,John Doe,Software,2024,2024-03-31,john@example.com
+   5678,Jane Smith,Data,2024,2024-06-30,jane@example.com
+   ```
+
+2. Upload the file to S3:
+   ```bash
+   aws s3 cp sample.csv s3://gdpr-input-bucket/
+   ```
+
+3. Process the file with the CLI:
+   ```bash
+   python cli.py --s3-path s3://gdpr-input-bucket/sample.csv --pii-fields name email_address --output s3://gdpr-output-bucket/obfuscated-sample.csv
+   ```
+
+4. Verify the result:
+   ```bash
+   aws s3 cp s3://gdpr-output-bucket/obfuscated-sample.csv ./
+   cat obfuscated-sample.csv
+   ```
+
+### Testing the Lambda Function
+
+1. Create a deployment package:
+   ```bash
+   mkdir -p package
+   pip install -r lambda_function/requirements.txt -t package/
+   cp -r src/ package/
+   cp lambda_function/lambda_function.py package/
+   cd package && zip -r ../lambda_deployment.zip . && cd ..
+   ```
+
+2. Deploy to AWS Lambda using the AWS CLI:
+   ```bash
+   aws lambda create-function \
+     --function-name gdpr-obfuscator \
+     --runtime python3.8 \
+     --role arn:aws:iam::YOUR_ACCOUNT_ID:role/lambda-s3-role \
+     --handler lambda_function.lambda_handler \
+     --zip-file fileb://lambda_deployment.zip \
+     --timeout 180 \
+     --memory-size 256 \
+     --environment Variables="{DEFAULT_OUTPUT_BUCKET=gdpr-output-bucket,DEFAULT_PII_FIELDS=name,email_address}"
+   ```
+
+3. Configure S3 trigger:
+   ```bash
+   aws lambda add-permission \
+     --function-name gdpr-obfuscator \
+     --statement-id s3-trigger \
+     --action lambda:InvokeFunction \
+     --principal s3.amazonaws.com \
+     --source-arn arn:aws:s3:::gdpr-input-bucket
+   ```
+
+4. Test by uploading a file to the input bucket:
+   ```bash
+   aws s3 cp sample.csv s3://gdpr-input-bucket/input/
+   ```
+
+5. Check the output bucket for the processed file:
+   ```bash
+   aws s3 ls s3://gdpr-output-bucket/
+   ```
+
+### Performance Testing with AWS
+
+To test performance with larger files:
+
+1. Generate a test file with the provided utility:
+   ```bash
+   python tools/generate_test_file.py --rows 10000 --output large_sample.csv
+   ```
+
+2. Upload and process the file:
+   ```bash
+   aws s3 cp large_sample.csv s3://gdpr-input-bucket/
+   python cli.py --s3-path s3://gdpr-input-bucket/large_sample.csv --pii-fields name email_address --output s3://gdpr-output-bucket/large_sample_obfuscated.csv
+   ```
+
+3. For Lambda performance testing, monitor execution metrics in CloudWatch.
 
 ## Project Structure
 
