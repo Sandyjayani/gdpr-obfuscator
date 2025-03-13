@@ -1,3 +1,4 @@
+#!/Users/sandy/Desktop/abacus_vscode/gdpr-obfuscator/cli.py
 #!/usr/bin/env python3
 import argparse
 import json
@@ -10,10 +11,10 @@ from src.gdpr_obfuscator import obfuscate_pii
 
 @mock_aws
 def process_local_file(
-        local_file: str,
-        pii_fields: list,
-        output_file: str = None,
-        bucket: str = 'my_ingestion_bucket'
+    local_file: str,
+    pii_fields: list,
+    output_file: str = None,
+    bucket: str = 'my_ingestion_bucket'
 ):
     """Process a local file using mocked AWS services"""
     try:
@@ -35,27 +36,54 @@ def process_local_file(
         })
 
         # Process the file
-        result = json.loads(obfuscate_pii(input_json))
-
-        # Check response status
-        if result['statusCode'] != 200:
-            print(f"Error: {result['body']}", file=sys.stderr)
+        result = obfuscate_pii(input_json)
+        
+        # Handle different response types
+        if isinstance(result, str):
+            try:
+                result_dict = json.loads(result)
+            except json.JSONDecodeError:
+                print("Error: Invalid JSON response from obfuscator", file=sys.stderr)
+                sys.exit(1)
+        elif isinstance(result, bytes):
+            # If result is bytes, decode it to string and try to parse as JSON
+            try:
+                result_dict = json.loads(result.decode('utf-8'))
+            except json.JSONDecodeError:
+                # If it's not JSON, treat the bytes as the direct output
+                if output_file:
+                    with open(output_file, 'wb') as f:
+                        f.write(result)
+                    print(f"Obfuscated CSV saved to: {output_file}")
+                else:
+                    sys.stdout.buffer.write(result)
+                return
+        elif isinstance(result, dict):
+            result_dict = result
+        else:
+            print(f"Error: Unexpected response type from obfuscator: {type(result)}", file=sys.stderr)
             sys.exit(1)
 
+        # Check response status
+        if result_dict.get('statusCode') != 200:
+            print(f"Error: {result_dict.get('body', 'Unknown error')}", file=sys.stderr)
+            sys.exit(1)
+
+        # Get the response body
+        body = result_dict.get('body', '')
+        
         # Handle output
         if output_file:
-            with open(output_file, 'wb') as f:
-                f.write(result['body'].encode('utf-8'))
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(body)
             print(f"Obfuscated CSV saved to: {output_file}")
         else:
-            sys.stdout.buffer.write(result['body'].encode('utf-8'))
+            # Print directly to stdout - using buffer.write instead of print to avoid extra newline
+            sys.stdout.buffer.write(body.encode('utf-8') if isinstance(body, str) else body)
 
     except FileNotFoundError:
         print(f"Error: Input file '{local_file}' not found. Please check the file path.",
               file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print("Error: Invalid response format from obfuscator", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
@@ -70,11 +98,64 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
             "pii_fields": pii_fields
         })
 
-        result = json.loads(obfuscate_pii(input_json))
+        # Process the file
+        result = obfuscate_pii(input_json)
+        
+        # Handle different response types
+        if isinstance(result, str):
+            try:
+                result_dict = json.loads(result)
+            except json.JSONDecodeError:
+                print("Error: Invalid JSON response from obfuscator", file=sys.stderr)
+                sys.exit(1)
+        elif isinstance(result, bytes):
+            # If result is bytes, decode it to string and try to parse as JSON
+            try:
+                result_dict = json.loads(result.decode('utf-8'))
+            except json.JSONDecodeError:
+                # If it's not JSON, treat the bytes as the direct output
+                if output_file:
+                    if output_file.startswith('s3://'):
+                        # Parse S3 path
+                        s3_parts = output_file[5:].split('/', 1)
+                        if len(s3_parts) < 2:
+                            print("Error: Invalid S3 output path format", file=sys.stderr)
+                            sys.exit(1)
+
+                        bucket = s3_parts[0]
+                        key = s3_parts[1]
+
+                        # Upload to S3
+                        s3_client = boto3.client('s3')
+                        s3_client.put_object(
+                            Bucket=bucket,
+                            Key=key,
+                            Body=result,
+                            ContentType='text/csv'
+                        )
+                        print(f"Obfuscated CSV saved to S3: {output_file}")
+                    else:
+                        with open(output_file, 'wb') as f:
+                            f.write(result)
+                        print(f"Obfuscated CSV saved to: {output_file}")
+                else:
+                    sys.stdout.buffer.write(result)
+                return
+        elif isinstance(result, dict):
+            result_dict = result
+        else:
+            print(f"Error: Unexpected response type from obfuscator: {type(result)}", file=sys.stderr)
+            sys.exit(1)
 
         # Check response status
-        if result['statusCode'] != 200:
-            print(f"Error: {result['body']}", file=sys.stderr)
+        if result_dict.get('statusCode') != 200:
+            print(f"Error: {result_dict.get('body', 'Unknown error')}", file=sys.stderr)
+            sys.exit(1)
+
+        # Get the response body
+        body = result_dict.get('body', '')
+        if not body:
+            print("Error: Empty response body from obfuscator", file=sys.stderr)
             sys.exit(1)
 
         if output_file:
@@ -82,29 +163,31 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
             if output_file.startswith('s3://'):
                 # Parse S3 path
                 s3_parts = output_file[5:].split('/', 1)
+                if len(s3_parts) < 2:
+                    print("Error: Invalid S3 output path format", file=sys.stderr)
+                    sys.exit(1)
+
                 bucket = s3_parts[0]
-                key = s3_parts[1] if len(s3_parts) > 1 else os.path.basename(s3_path)
-                
+                key = s3_parts[1]
+
                 # Upload to S3
                 s3_client = boto3.client('s3')
                 s3_client.put_object(
                     Bucket=bucket,
                     Key=key,
-                    Body=result['body'].encode('utf-8'),
+                    Body=body.encode('utf-8') if isinstance(body, str) else body,
                     ContentType='text/csv'
                 )
                 print(f"Obfuscated CSV saved to S3: {output_file}")
             else:
                 # Local file output
-                with open(output_file, 'wb') as f:
-                    f.write(result['body'].encode('utf-8'))
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(body)
                 print(f"Obfuscated CSV saved to: {output_file}")
         else:
-            sys.stdout.buffer.write(result['body'].encode('utf-8'))
+            # Print directly to stdout - using buffer.write instead of print to avoid extra newline
+            sys.stdout.buffer.write(body.encode('utf-8') if isinstance(body, str) else body)
 
-    except json.JSONDecodeError:
-        print("Error: Invalid response format from obfuscator", file=sys.stderr)
-        sys.exit(1)
     except Exception as e:
         print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
