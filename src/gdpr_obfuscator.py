@@ -54,7 +54,10 @@ def obfuscate_pii(input_json: str) -> bytes:
     if '..' in key or key.startswith('/'):
         raise ValueError("Invalid S3 key: potential path traversal detected")
 
-    s3_client = boto3.client('s3')
+    # Create S3 client with explicit region
+    session = boto3.session.Session()
+    region = session.region_name or 'us-east-1'
+    s3_client = boto3.client('s3', region_name=region)
 
     # Download CSV from S3
     try:
