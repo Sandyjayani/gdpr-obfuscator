@@ -35,11 +35,14 @@ def test_lambda_handler_success():
     response = lambda_handler(event, None)
 
     assert response["statusCode"] == 200
-    assert "Successfully processed" in response["body"]
 
-    # Verify the obfuscated file was created
-    response = s3_client.get_object(Bucket=bucket_name, Key='processed_data/file1.csv')
-    result = response['Body'].read().decode('utf-8').replace('\r\n', '\n')
+    # Check the processed content - decode bytes to string if needed
+    result = response["body"]
+    if isinstance(result, bytes):
+        result = result.decode('utf-8')
+
+    # Normalize line endings for comparison
+    result = result.replace('\r\n', '\n')
 
     expected = (
         "student_id,name,course,cohort,graduation_date,email_address\n"
@@ -79,7 +82,7 @@ def test_lambda_handler_missing_file():
     # Call lambda handler and assert the response
     result = lambda_handler(event, None)
     assert result["statusCode"] == 404  # Status code for missing file
-    assert "Error processing" in result["body"] or "File not found" in result["body"]
+    assert "File not found" in result["body"]
 
 
 @mock_aws
@@ -117,11 +120,12 @@ def test_lambda_handler_custom_pii_fields():
         response = lambda_handler(event, None)
 
         assert response["statusCode"] == 200
-        assert "Successfully processed" in response["body"]
-
-        # Verify the obfuscated file was created with the right fields masked
-        response = s3_client.get_object(Bucket=bucket_name, Key='processed_data/file2.csv')
-        result = response['Body'].read().decode('utf-8').replace('\r\n', '\n')
+        
+        # Check the processed content
+        result = response["body"]
+        if isinstance(result, bytes):
+            result = result.decode('utf-8')
+        result = result.replace('\r\n', '\n')
 
         expected = (
             "student_id,name,course,cohort,graduation_date,email_address\n"
@@ -135,45 +139,95 @@ def test_lambda_handler_custom_pii_fields():
 
 
 @mock_aws
+def test_lambda_handler_direct_invocation():
+    """Test direct invocation with file_to_obfuscate parameter"""
+    # Set environment variable for PII fields
+    os.environ['PII_FIELDS'] = 'name'
+
+    try:
+        # Set up mock S3
+        s3_client = boto3.client('s3')
+        bucket_name = 'my_ingestion_bucket'
+        s3_client.create_bucket(Bucket=bucket_name)
+
+        # Create sample CSV
+        csv_content = (
+            b"student_id,name,email_address\n"
+            b"1234,John Doe,john@example.com\n"
+        )
+        s3_client.put_object(Bucket=bucket_name, Key='custom_folder/data.csv', Body=csv_content)
+
+        # Create test event for direct invocation
+        event = {
+            "file_to_obfuscate": f"s3://{bucket_name}/custom_folder/data.csv"
+        }
+
+        # Call lambda handler
+        response = lambda_handler(event, None)
+
+        assert response["statusCode"] == 200
+        
+        # Check the processed content
+        result = response["body"]
+        if isinstance(result, bytes):
+            result = result.decode('utf-8')
+        result = result.replace('\r\n', '\n')
+
+        expected = (
+            "student_id,name,email_address\n"
+            "1234,***,john@example.com\n"
+        )
+        assert result == expected
+    finally:
+        # Clean up environment variable
+        if 'PII_FIELDS' in os.environ:
+            del os.environ['PII_FIELDS']
+
+
+
+@mock_aws
 def test_lambda_handler_non_standard_path():
     """Test processing a file not in the new_data folder"""
     # Set environment variable for PII fields to match our test data
     os.environ['PII_FIELDS'] = 'name'
 
-    # Set up mock S3
-    s3_client = boto3.client('s3')
-    bucket_name = 'my_ingestion_bucket'
-    s3_client.create_bucket(Bucket=bucket_name)
-
-    # Create sample CSV in a different folder
-    csv_content = (
-        b"student_id,name,email_address\n"
-        b"1234,John Doe,john@example.com\n"
-    )
-    s3_client.put_object(Bucket=bucket_name, Key='custom_folder/data.csv', Body=csv_content)
-
-    # Create test event
-    event = {
-        "Records": [
-            {
-                "s3": {
-                    "bucket": {"name": bucket_name},
-                    "object": {"key": "custom_folder/data.csv"}
-                }
-            }
-        ]
-    }
-
     try:
+        # Set up mock S3
+        s3_client = boto3.client('s3')
+        bucket_name = 'my_ingestion_bucket'
+        s3_client.create_bucket(Bucket=bucket_name)
+
+        # Create sample CSV in a different folder
+        csv_content = (
+            b"student_id,name,email_address\n"
+            b"1234,John Doe,john@example.com\n"
+        )
+        s3_client.put_object(Bucket=bucket_name, Key='custom_folder/data.csv', Body=csv_content)
+
+        # Create test event
+        event = {
+            "Records": [
+                {
+                    "s3": {
+                        "bucket": {"name": bucket_name},
+                        "object": {"key": "custom_folder/data.csv"}
+                    }
+                }
+            ]
+        }
+
         # Call lambda handler
         response = lambda_handler(event, None)
 
         assert response["statusCode"] == 200
-        assert "Successfully processed" in response["body"]
 
-        # Verify the obfuscated file was created in the processed_data folder
-        response = s3_client.get_object(Bucket=bucket_name, Key='processed_data/data.csv')
-        result = response['Body'].read().decode('utf-8').replace('\r\n', '\n')
+        # Check the processed content - decode bytes to string if needed
+        result = response["body"]
+        if isinstance(result, bytes):
+            result = result.decode('utf-8')
+
+        # Normalize line endings for comparison
+        result = result.replace('\r\n', '\n')
 
         expected = (
             "student_id,name,email_address\n"
