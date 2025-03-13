@@ -246,7 +246,7 @@ print(result)  # Contains status and output file location
      --zip-file fileb://lambda_deployment.zip \
      --timeout 180 \
      --memory-size 256 \
-     --environment Variables="{DEFAULT_OUTPUT_BUCKET=gdpr-output-bucket,DEFAULT_PII_FIELDS=name,email_address}"
+     --environment "Variables={DEFAULT_OUTPUT_BUCKET=gdpr-output-bucket,DEFAULT_PII_FIELDS=name,email_address}"
    ```
 
 3. Configure S3 trigger:
