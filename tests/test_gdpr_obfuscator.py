@@ -239,6 +239,61 @@ def test_obfuscate_pii_unicode_characters():
 
     s3_client.put_object(Bucket=bucket_name, Key='unicode.csv', Body=csv_content)
 
+    input_json = json.dumps({
+        "file_to_obfuscate": f"s3://{bucket_name}/unicode.csv",
+        "pii_fields": ["name", "email"]
+    })
+
+    result = obfuscate_pii(input_json)
+    result_str = result.decode('utf-8').replace('\r\n', '\n')
+
+    expected = (
+        "id,name,email\n"
+        "1,***,***\n"
+        "2,***,***\n"
+    )
+    assert result_str == expected
+
+
+@mock_aws
+def test_obfuscate_pii_with_output_location():
+    """Test specifying an output location for the obfuscated file"""
+    s3_client = boto3.client('s3')
+    bucket_name = 'my_ingestion_bucket'
+    output_bucket = 'my_output_bucket'
+    output_key = 'processed/output.csv'
+
+    s3_client.create_bucket(Bucket=bucket_name)
+    s3_client.create_bucket(Bucket=output_bucket)
+
+    csv_content = (
+        "id,name,email\n"
+        "1,John Doe,john@example.com\n"
+    ).encode('utf-8')
+
+    s3_client.put_object(Bucket=bucket_name, Key='input.csv', Body=csv_content)
+
+    input_json = json.dumps({
+        "file_to_obfuscate": f"s3://{bucket_name}/input.csv",
+        "pii_fields": ["name", "email"],
+        "output_location": f"s3://{output_bucket}/{output_key}"
+    })
+
+    result = obfuscate_pii(input_json)
+    result_str = result.decode('utf-8').replace('\r\n', '\n')
+
+    expected = (
+        "id,name,email\n"
+        "1,***,***\n"
+    )
+    assert result_str == expected
+
+    # Verify the file was written to the output location
+    response = s3_client.get_object(Bucket=output_bucket, Key=output_key)
+    output_content = response['Body'].read().decode('utf-8').replace('\r\n', '\n')
+    assert output_content == expected
+    assert response['ContentType'] == 'text/csv'
+
 
 @mock_aws
 def test_obfuscate_pii_path_traversal_detection():
