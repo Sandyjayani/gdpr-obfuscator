@@ -65,9 +65,27 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
         result = obfuscate_pii(input_json)
 
         if output_file:
-            with open(output_file, 'wb') as f:
-                f.write(result)
-            print(f"Obfuscated CSV saved to: {output_file}")
+            # Check if output is an S3 path
+            if output_file.startswith('s3://'):
+                # Parse S3 path
+                s3_parts = output_file[5:].split('/', 1)
+                bucket = s3_parts[0]
+                key = s3_parts[1] if len(s3_parts) > 1 else os.path.basename(s3_path)
+                
+                # Upload to S3
+                s3_client = boto3.client('s3')
+                s3_client.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=result,
+                    ContentType='text/csv'
+                )
+                print(f"Obfuscated CSV saved to S3: {output_file}")
+            else:
+                # Local file output
+                with open(output_file, 'wb') as f:
+                    f.write(result)
+                print(f"Obfuscated CSV saved to: {output_file}")
         else:
             sys.stdout.buffer.write(result)
 
