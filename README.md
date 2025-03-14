@@ -117,46 +117,6 @@ Note:
   - S3 access or upload errors
   - Processing errors
 
-### S3 Output Examples
-
-When using the `--output` parameter with an S3 path, the tool will upload the obfuscated file directly to the specified S3 location:
-
-```bash
-# Process a file from one S3 bucket and save to another
-python cli.py --s3-path s3://source-bucket/data.csv --pii-fields name email_address --output s3://destination-bucket/masked-data.csv
-
-# Process a file and save to the same bucket with a different prefix
-python cli.py --s3-path s3://my-bucket/raw/data.csv --pii-fields name email_address --output s3://my-bucket/processed/data.csv
-
-# Process a file and save with a different filename
-python cli.py --s3-path s3://my-bucket/customer-data.csv --pii-fields name email_address --output s3://my-bucket/customer-data-anonymized.csv
-```
-
-The tool will automatically:
-1. Download the source file from S3
-2. Process and obfuscate the specified PII fields
-3. Upload the result directly to the specified S3 location
-4. Set the proper Content-Type as 'text/csv'
-
-### As a Python Package
-
-```python
-from src.gdpr_obfuscator import obfuscate_pii
-import json
-
-# Prepare input JSON
-input_json = {
-    "file_to_obfuscate": "s3://my-bucket/path/to/file.csv",
-    "pii_fields": ["name", "email_address"],
-    "output_path": "s3://my-bucket/processed/file.csv",  # Optional
-    "obfuscation_char": "#",  # Optional, defaults to *
-    "preserve_format": True  # Optional, defaults to False
-}
-
-# Process the file
-result = obfuscate_pii(json.dumps(input_json))
-print(result)  # Contains status and output file location
-```
 
 ### As an AWS Lambda Function
 
@@ -168,7 +128,12 @@ The Lambda function supports two invocation methods:
 ```python
 # Example event for direct invocation
 {
-    "file_to_obfuscate": "s3://my-bucket/path/to/file.csv"
+  "file_to_obfuscate": "s3://gdpr-input-bucket/sample.csv",
+  "pii_fields": [
+    "name",
+    "email_address"
+  ],
+    "output_path": "s3://gdpr-output-bucket/sample_obfuscated.csv"
 }
 ```
 
@@ -190,9 +155,7 @@ The function automatically processes files when they are uploaded to a configure
    - Handler: lambda_function.lambda_handler
    - Memory: 256MB (recommended minimum)
    - Timeout: 3 minutes (for larger files)
-   - Environment variables:
-     - `PII_FIELDS`: Comma-separated list of fields to obfuscate (e.g., "name,email_address")
-     - `LOG_LEVEL`: Optional logging level (defaults to INFO)
+
 
 3. Set up S3 trigger for new files:
    - Configure event type: ObjectCreated
@@ -265,11 +228,15 @@ Status Codes:
 
 1. Create a deployment package:
    ```bash
-   mkdir -p package
-   pip install -r lambda_function/requirements.txt -t package/
-   cp -r src/ package/
-   cp lambda_function/lambda_function.py package/
-   cd package && zip -r ../lambda_deployment.zip . && cd ..
+   mkdir -p lambda_package
+   cp lambda_function/lambda_function.py lambda_package/
+   mkdir -p lambda_package/src
+   cp src/gdpr_obfuscator.py lambda_package/src/
+   touch lambda_package/src/__init__.py
+
+   cd lambda_package
+   zip -r ../gdpr-obfuscator-lambda.zip .
+   cd ..
    ```
 
 2. Deploy to AWS Lambda using the AWS CLI:
@@ -467,11 +434,91 @@ pytest
 pytest tests/test_gdpr_obfuscator.py
 
 # Run tests with coverage report
+pip install pytest-cov
 pytest --cov=src tests/
 
 # Generate HTML coverage report
 pytest --cov=src --cov-report=html tests/
+
+# Run tests without deprecation warnings
+pytest --disable-warnings
 ```
+
+#### Handling Deprecation Warnings
+
+The tests may show deprecation warnings from the boto3/botocore libraries. These warnings are related to the use of `datetime.datetime.utcnow()` which is deprecated in newer Python versions. 
+
+These warnings don't affect functionality and are handled in two ways:
+1. Through the `pytest.ini` configuration file
+2. Via a fixture in `tests/conftest.py`
+
+If you want to run tests without seeing these warnings, use:
+```bash
+pytest --disable-warnings
+```
+
+#### Handling Region-Specific Issues
+
+When running tests or using the local mode, you might encounter region-specific errors like:
+```
+IllegalLocationConstraintException: The unspecified location constraint is incompatible for the region specific endpoint this request was sent to.
+```
+
+This happens because:
+1. The AWS SDK uses your configured region (from `~/.aws/config` or environment variables)
+2. When creating S3 buckets without specifying a region, it can cause conflicts
+
+The codebase handles this by explicitly setting the region to `us-east-1` when creating mock S3 resources. If you're still encountering this error, you can:
+
+1. Set the AWS region in your environment:
+   ```bash
+   export AWS_DEFAULT_REGION=us-east-1
+   ```
+
+2. Or configure it in your AWS config file:
+   ```bash
+   aws configure set region us-east-1
+   ```
+
+### Troubleshooting the IllegalLocationConstraintException
+
+If you're still encountering the `IllegalLocationConstraintException` error after setting your region, here are additional troubleshooting steps:
+
+1. **Check your current AWS region configuration**:
+   ```bash
+   aws configure get region
+   ```
+
+2. **Verify the code is using your region**:
+   The latest version of the code should automatically detect your configured region. If you're using an older version, you might need to update the S3 client initialization to use your region:
+   
+   ```python
+   # Get the default region from the session or use us-east-1 as fallback
+   session = boto3.session.Session()
+   region = session.region_name or 'us-east-1'
+   
+   # Create S3 client with your region
+   s3_client = boto3.client('s3', region_name=region)
+   ```
+
+3. **For non-us-east-1 regions**: When creating buckets in regions other than `us-east-1`, you may need to explicitly specify the location constraint:
+   
+   ```python
+   # Only needed for regions other than us-east-1
+   if region != 'us-east-1':
+       s3_client.create_bucket(
+           Bucket=bucket,
+           CreateBucketConfiguration={'LocationConstraint': region}
+       )
+   else:
+       s3_client.create_bucket(Bucket=bucket)
+   ```
+
+4. **For testing purposes only**: If you're just testing locally and don't need to interact with real AWS services, you can set a dummy region:
+   
+   ```bash
+   export AWS_DEFAULT_REGION=us-east-1
+   ```
 
 The tests cover:
 - Core obfuscation functionality
@@ -571,48 +618,72 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## AWS Lambda Deployment
 
-### Creating a Deployment Package
+### Creating a Deployment Package for Manual Upload
+
+Create a properly structured deployment package for manual upload through the AWS Console:
 
 ```bash
-# Create a deployment package manually
-mkdir -p package
-pip install -r lambda_function/requirements.txt -t package/
-cp -r src/ package/
-cp lambda_function/lambda_function.py package/
-cd package && zip -r ../lambda_deployment.zip . && cd ..
+# Create a deployment directory with proper structure
+mkdir -p lambda_deployment/src
+
+# Copy the files to the correct locations
+cp lambda_function/lambda_function.py lambda_deployment/
+cp src/gdpr_obfuscator.py lambda_deployment/src/
+
+# Create an __init__.py file in the src directory to make it a proper package
+touch lambda_deployment/src/__init__.py
+
+# Create the zip file with the correct structure
+cd lambda_deployment
+zip -r ../lambda_deployment.zip .
+cd ..
 ```
 
-### Deploying to AWS Lambda
+This creates a deployment package with the correct directory structure:
+```
+lambda_deployment.zip
+├── lambda_function.py
+└── src/
+    ├── __init__.py
+    └── gdpr_obfuscator.py
+```
 
-1. **Create a new Lambda function**:
+### Manual Upload to AWS Lambda
+
+1. Go to the [AWS Lambda Console](https://console.aws.amazon.com/lambda)
+2. Click "Create function" or select your existing function
+3. Under the "Code source" section:
+   - Click "Upload from"
+   - Select ".zip file"
+   - Upload your `lambda_deployment.zip`
+4. Configure the function:
    - Runtime: Python 3.8+
    - Handler: lambda_function.lambda_handler
-   - Memory: 256MB (minimum recommended)
+   - Memory: 256MB (recommended minimum)
    - Timeout: 3 minutes (for larger files)
-   - Upload the lambda_deployment.zip file
 
-2. **Configure IAM permissions**:
-   - Create a role with the following policies:
-     - AmazonS3ReadOnlyAccess (for reading input files)
-     - Custom policy for writing to output bucket
-     - CloudWatchLogsFullAccess (for logging)
 
-3. **Configure environment variables**:
-   - `DEFAULT_OUTPUT_BUCKET`: Default S3 bucket for processed files
-   - `DEFAULT_PII_FIELDS`: Comma-separated list of default PII fields
-   - `OBFUSCATION_CHAR`: Character to use for obfuscation (optional)
-   - `LOG_LEVEL`: Logging level (default: INFO)
+### Configure IAM Role
 
-4. **Set up S3 trigger**:
-   - Event type: s3:ObjectCreated:*
-   - Bucket: Your input bucket
-   - Prefix: input/ (optional)
-   - Suffix: .csv
-
-5. **Test the deployment**:
-   - Upload a CSV file to the configured S3 bucket
-   - Check CloudWatch logs for processing details
-   - Verify the obfuscated file in the output location
+Ensure your Lambda function has an IAM role with:
+- AmazonS3ReadOnlyAccess (for reading input files)
+- Custom policy for writing to output bucket:
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:PutObject",
+          "s3:PutObjectAcl"
+        ],
+        "Resource": "arn:aws:s3:::gdpr-output-bucket/*"
+      }
+    ]
+  }
+  ```
+- CloudWatchLogsFullAccess (for logging)
 
 ### Monitoring and Maintenance
 
