@@ -1,4 +1,3 @@
-#!/Users/sandy/Desktop/abacus_vscode/gdpr-obfuscator/cli.py
 #!/usr/bin/env python3
 import argparse
 import json
@@ -18,9 +17,21 @@ def process_local_file(
 ):
     """Process a local file using mocked AWS services"""
     try:
-        # Create mock S3 bucket
-        s3_client = boto3.client('s3')
-        s3_client.create_bucket(Bucket=bucket)
+        # Get the default region from the session or use us-east-1 as fallback
+        session = boto3.session.Session()
+        region = session.region_name or 'us-east-1'
+
+        # Create mock S3 bucket with explicit region
+        s3_client = boto3.client('s3', region_name=region)
+
+        # Handle location constraint for non-us-east-1 regions
+        if region != 'us-east-1':
+            s3_client.create_bucket(
+                Bucket=bucket,
+                CreateBucketConfiguration={'LocationConstraint': region}
+            )
+        else:
+            s3_client.create_bucket(Bucket=bucket)
 
         # Read local file and upload to mock S3
         with open(local_file, 'rb') as f:
@@ -37,7 +48,7 @@ def process_local_file(
 
         # Process the file
         result = obfuscate_pii(input_json)
-        
+
         # Handle different response types
         if isinstance(result, str):
             try:
@@ -61,7 +72,8 @@ def process_local_file(
         elif isinstance(result, dict):
             result_dict = result
         else:
-            print(f"Error: Unexpected response type from obfuscator: {type(result)}", file=sys.stderr)
+            print(f"Error: Unexpected response type from obfuscator: {type(result)}",
+                  file=sys.stderr)
             sys.exit(1)
 
         # Check response status
@@ -71,7 +83,7 @@ def process_local_file(
 
         # Get the response body
         body = result_dict.get('body', '')
-        
+
         # Handle output
         if output_file:
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -100,7 +112,7 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
 
         # Process the file
         result = obfuscate_pii(input_json)
-        
+
         # Handle different response types
         if isinstance(result, str):
             try:
@@ -125,8 +137,12 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
                         bucket = s3_parts[0]
                         key = s3_parts[1]
 
+                        # Get the default region from the session or use us-east-1 as fallback
+                        session = boto3.session.Session()
+                        region = session.region_name or 'us-east-1'
+
                         # Upload to S3
-                        s3_client = boto3.client('s3')
+                        s3_client = boto3.client('s3', region_name=region)
                         s3_client.put_object(
                             Bucket=bucket,
                             Key=key,
@@ -144,7 +160,8 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
         elif isinstance(result, dict):
             result_dict = result
         else:
-            print(f"Error: Unexpected response type from obfuscator: {type(result)}", file=sys.stderr)
+            print(f"Error: Unexpected response type from obfuscator: {type(result)}",
+                  file=sys.stderr)
             sys.exit(1)
 
         # Check response status
@@ -170,8 +187,12 @@ def process_s3_file(s3_path: str, pii_fields: list, output_file: str = None):
                 bucket = s3_parts[0]
                 key = s3_parts[1]
 
+                # Get the default region from the session or use us-east-1 as fallback
+                session = boto3.session.Session()
+                region = session.region_name or 'us-east-1'
+
                 # Upload to S3
-                s3_client = boto3.client('s3')
+                s3_client = boto3.client('s3', region_name=region)
                 s3_client.put_object(
                     Bucket=bucket,
                     Key=key,
